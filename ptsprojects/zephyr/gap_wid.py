@@ -188,6 +188,7 @@ def hdl_wid_91(desc):
 
 
 def hdl_wid_106(desc):
+    btp.gap_pair()
     return True
 
 
