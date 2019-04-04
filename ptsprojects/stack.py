@@ -19,6 +19,60 @@ from threading import Lock, Timer, Event
 STACK = None
 
 
+class GattAttribute:
+    def __init__(self, handle, perm, uuid, att_rsp):
+        self.handle = handle
+        self.perm = perm
+        self.uuid = uuid
+        self.att_read_rsp = att_rsp
+
+
+class GattService(GattAttribute):
+    pass
+
+
+class GattPrimary(GattService):
+    pass
+
+
+class GattSecondary(GattService):
+    pass
+
+
+class GattServiceIncluded(GattAttribute):
+    def __init__(self, handle, perm, uuid, att_rsp, incl_svc_hdl, end_grp_hdl):
+        GattAttribute.__init__(self, handle, perm, uuid, att_rsp)
+        self.incl_svc_hdl = incl_svc_hdl
+        self.end_grp_hdl = end_grp_hdl
+
+
+class GattCharacteristic(GattAttribute):
+    def __init__(self, handle, perm, uuid, att_rsp, prop, value_handle):
+        GattAttribute.__init__(self, handle, perm, uuid, att_rsp)
+        self.prop = prop
+        self.value_handle = value_handle
+
+
+class GattCharacteristicDescriptor(GattAttribute):
+    def __init__(self, handle, perm, uuid, att_rsp, value):
+        GattAttribute.__init__(self, handle, perm, uuid, att_rsp)
+        self.value = value
+
+
+class GattDB:
+    def __init__(self):
+        self.db = dict()
+
+    def attr_add(self, handle, attr):
+        self.db[handle] = attr
+
+    def attr_lookup_handle(self, handle):
+        if handle in self.db:
+            return self.db[handle]
+        else:
+            return None
+
+
 class Property(object):
     def __init__(self, data):
         self._lock = Lock()
@@ -492,7 +546,7 @@ class Gatt:
         if handle in self.server_attrs:
             self.server_attrs[handle].value = value
         else:
-            self.server_attrs[handle] = Attribute(None)
+            self.server_attrs[handle] = GattAttribute(None)
             self.server_attrs[handle].value = value
 
     def attr_value_get(self, handle):
@@ -512,7 +566,7 @@ class Gatt:
 
     def wait_attr_value_changed(self, handle, timeout=None):
         if handle not in self.server_attrs:
-            self.server_attrs[handle] = Attribute(None)
+            self.server_attrs[handle] = GattAttribute(None)
 
         if self.server_attrs[handle].changed_ev.wait(timeout=timeout):
             return self.server_attrs[handle].value
