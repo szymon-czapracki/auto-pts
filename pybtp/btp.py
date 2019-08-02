@@ -132,7 +132,9 @@ GATTS = {
     "get_attrs": (defs.BTP_SERVICE_ID_GATT, defs.GATT_GET_ATTRIBUTES,
                   CONTROLLER_INDEX),
     "get_attr_val": (defs.BTP_SERVICE_ID_GATT,
-                     defs.GATT_GET_ATTRIBUTE_VALUE, CONTROLLER_INDEX)
+                     defs.GATT_GET_ATTRIBUTE_VALUE, CONTROLLER_INDEX),
+    "change_database": (defs.BTP_SERVICE_ID_GATT,
+                    defs.GATT_CHANGE_DATABASE, CONTROLLER_INDEX),
 }
 
 GATTC = {
@@ -1071,6 +1073,29 @@ def gatts_add_desc(hdl, perm, uuid):
     gatt_command_rsp_succ()
 
 
+def gatts_change_database(start_hdl, end_hdl, vis):
+    logging.debug("%s %r %r %r", gatts_change_database.__name__, start_hdl, end_hdl, vis)
+
+    iutctl = get_iut()
+
+    if type(start_hdl) is str:
+        start_hdl = int(start_hdl, 16)
+
+    if type(end_hdl) is str:
+        end_hdl = int(end_hdl, 16)
+
+    data_ba = bytearray()
+    start_hdl_ba = struct.pack('H', start_hdl)
+    end_hdl_ba = struct.pack('H', end_hdl)
+    data_ba.extend(start_hdl_ba)
+    data_ba.extend(end_hdl_ba)
+    data_ba.extend(chr(vis))
+
+    iutctl.btp_socket.send(*GATTS['change_database'], data=data_ba)
+
+    gatt_command_rsp_succ()
+
+
 def gatts_start_server():
     logging.debug("%s", gatts_start_server.__name__)
 
@@ -1240,17 +1265,21 @@ def gatts_get_attrs(start_handle=0x0001, end_handle=0xffff, type_uuid=None):
     return dec_gatts_get_attrs_rp(tuple_data[0], tuple_hdr.data_len)
 
 
-def gatts_get_attr_val(handle):
+def gatts_get_attr_val(bd_addr_type, bd_addr, handle):
     logging.debug("%s %r", gatts_get_attr_val.__name__, handle)
 
     iutctl = get_iut()
 
     data_ba = bytearray()
 
+    bd_addr_ba = addr2btp_ba(bd_addr)
     if type(handle) is str:
         handle = int(handle, 16)
 
     hdl_ba = struct.pack('H', handle)
+
+    data_ba.extend(chr(bd_addr_type))
+    data_ba.extend(bd_addr_ba)
     data_ba.extend(hdl_ba)
 
     iutctl.btp_socket.send(*GATTS['get_attr_val'], data=data_ba)

@@ -197,20 +197,20 @@ class Perm:
     read = 2 ** 0
     write = 2 ** 1
     read_enc = 2 ** 2
-    write_enc = 2 ** 3
-    read_authn = 2 ** 4
-    write_authn = 2 ** 5
-    read_authz = 2 ** 6
+    read_authn = 2 ** 3
+    read_authz = 2 ** 4
+    write_enc = 2 ** 5
+    write_authn = 2 ** 6
     write_authz = 2 ** 7
 
     names = {
         read: "Read",
         write: "Write",
         read_enc: "Read with Encryption",
-        write_enc: "Write with Encryption",
         read_authn: "Read with Authentication",
-        write_authn: "Write with Authentication",
         read_authz: "Read with Authorization",
+        write_enc: "Write with Encryption",
+        write_authn: "Write with Authentication",
         write_authz: "Write with Authorization"
     }
 
