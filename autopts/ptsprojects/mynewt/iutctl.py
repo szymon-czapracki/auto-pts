@@ -32,7 +32,7 @@ MYNEWT = None
 import importlib
 IUT_LOG_FO = None
 SERIAL_BAUDRATE = 115200
-CLI_SUPPORT = ['tty']
+CLI_SUPPORT = ['tty', 'hci']
 
 
 class MynewtCtl:
@@ -44,20 +44,31 @@ class MynewtCtl:
             self.__class__, self.__init__.__name__, args.tty_file,
             args.board_name)
 
-        assert args.tty_file and args.board_name
+        #assert args.tty_file and args.board_name
 
         self.tty_file = args.tty_file
         self.pylink_reset = args.pylink_reset
         self.device_core = args.device_core
         self.debugger_snr = get_debugger_snr(self.tty_file) \
             if args.debugger_snr is None else args.debugger_snr
-        self.board = Board(args.board_name, self)
         self.socat_process = None
         self.socket_srv = None
         self.btp_socket = None
         self.test_case = None
         self.iut_log_file = None
         self.gdb = args.gdb
+        self.hci = args.hci
+        self.kernel_image = args.kernel_image
+        self.native_process = None
+        self.rtt_logger = None
+        self.btmon = None
+
+        if self.tty_file and args.board_name:  # DUT is a hardware board, not QEMU
+            if self.debugger_snr is None:
+                self.debugger_snr = get_debugger_snr(self.tty_file)
+            self.board = Board(args.board_name, self)
+        else:  # DUT is QEMU or a board that won't be reset
+            self.board = None
 
         if self.debugger_snr:
             self.btp_address = BTP_ADDRESS + self.debugger_snr
@@ -80,27 +91,42 @@ class MynewtCtl:
         self.socket_srv.open(self.btp_address)
         self.btp_socket = BTPWorker(self.socket_srv)
 
-        if sys.platform == "win32":
-            # On windows socat.exe does not support setting serial baud rate.
-            # Set it with 'mode' from cmd.exe
-            com = tty_to_com(self.tty_file)
-            mode_cmd = (">nul 2>nul cmd.exe /c \"mode " + com + "BAUD=115200 PARITY=n DATA=8 STOP=1\"")
-            os.system(mode_cmd)
+        if self.tty_file:
+            if sys.platform == "win32":
+                # On windows socat.exe does not support setting serial baud rate.
+                # Set it with 'mode' from cmd.exe
+                com = tty_to_com(self.tty_file)
+                mode_cmd = (">nul 2>nul cmd.exe /c \"mode " + com + "BAUD=115200 PARITY=n DATA=8 STOP=1\"")
+                os.system(mode_cmd)
 
-            socat_cmd = ("socat.exe -x -v tcp:" + socket.gethostbyname(socket.gethostname()) +
-                         ":%s,retry=100,interval=1 %s,raw,b115200" %
-                         (self.socket_srv.sock.getsockname()[1], self.tty_file))
-        else:
-            socat_cmd = ("socat -x -v %s,rawer,b115200 UNIX-CONNECT:%s" %
-                         (self.tty_file, self.btp_address))
+                socat_cmd = ("socat.exe -x -v tcp:" + socket.gethostbyname(socket.gethostname()) +
+                             ":%s,retry=100,interval=1 %s,raw,b115200" %
+                             (self.socket_srv.sock.getsockname()[1], self.tty_file))
+            else:
+                socat_cmd = ("socat -x -v %s,rawer,b115200 UNIX-CONNECT:%s" %
+                             (self.tty_file, self.btp_address))
 
-        log("Starting socat process: %s", socat_cmd)
+            log("Starting socat process: %s", socat_cmd)
 
-        # socat dies after socket is closed, so no need to kill it
-        self.socat_process = subprocess.Popen(shlex.split(socat_cmd),
-                                              shell=False,
-                                              stdout=self.iut_log_file,
-                                              stderr=self.iut_log_file)
+            # socat dies after socket is closed, so no need to kill it
+            self.socat_process = subprocess.Popen(shlex.split(socat_cmd),
+                                                  shell=False,
+                                                  stdout=self.iut_log_file,
+                                                  stderr=self.iut_log_file)
+        elif self.hci is not None:
+            socat_cmd = ("socat -x -v %%s,rawer,b115200 UNIX-CONNECT:%s &" %
+                         self.btp_address)
+
+            native_cmd = ("%s --bt-dev=hci%d --attach_uart_cmd=\"%s\"" %
+                          (self.kernel_image, self.hci, socat_cmd))
+
+            log("Starting native zephyr process: %s", native_cmd)
+
+            # TODO check if zephyr process has started correctly
+            self.native_process = subprocess.Popen(shlex.split(native_cmd),
+                                                   shell=False,
+                                                   stdout=self.iut_log_file,
+                                                   stderr=self.iut_log_file)
 
         self.btp_socket.accept()
 

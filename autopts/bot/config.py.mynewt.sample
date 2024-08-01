@@ -37,7 +37,8 @@ m['auto_pts'] = {
     # 'tty_file': '/dev/ttyUSB',
     # 'database_file': 'path/to/mynewtTestCase.db',
     # 'store': True,
-    'board': 'nordic_pca10056',
+    #'board': 'nordic_pca10056',
+    'hci': 2
     'enable_max_logs': False,
     'retry': 2,
     'bd_addr': '',
