@@ -1609,81 +1609,83 @@ def hdl_wid_120(_: WIDParams):
 
 def hdl_wid_121(_: WIDParams):
     # Lookup characteristic UUID that returns Insufficient Encryption Key Size
-    chrcs = btp.gatts_get_attrs(type_uuid='2803')
-    for chrc in chrcs:
-        handle, perm, type_uuid = chrc
+    ##chrcs = btp.gatts_get_attrs(type_uuid='2803')
+    ##for chrc in chrcs:
+    ##    handle, perm, type_uuid = chrc
 
-        chrc_val = btp.gatts_get_attr_val(btp.pts_addr_type_get(),
-                                          btp.pts_addr_get(), handle)
-        if not chrc_val:
-            continue
+    ##    chrc_val = btp.gatts_get_attr_val(btp.pts_addr_type_get(),
+    ##                                      btp.pts_addr_get(), handle)
+    ##    if not chrc_val:
+    ##        continue
 
-        (att_rsp, val_len, val) = chrc_val
+    ##    (att_rsp, val_len, val) = chrc_val
 
-        hdr = '<BH'
-        hdr_len = struct.calcsize(hdr)
-        uuid_len = val_len - hdr_len
+    ##    hdr = '<BH'
+    ##    hdr_len = struct.calcsize(hdr)
+    ##    uuid_len = val_len - hdr_len
 
-        prop, handle, chrc_uuid = struct.unpack("<BH%ds" % uuid_len, val)
-        chrc_value_attr = btp.gatts_get_attrs(start_handle=handle,
-                                              end_handle=handle)
-        if not chrc_value_attr:
-            continue
+    ##    prop, handle, chrc_uuid = struct.unpack("<BH%ds" % uuid_len, val)
+    ##    chrc_value_attr = btp.gatts_get_attrs(start_handle=handle,
+    ##                                          end_handle=handle)
+    ##    if not chrc_value_attr:
+    ##        continue
 
-        handle, perm, type_uuid = chrc_value_attr[0]
-        chrc_value_data = btp.gatts_get_attr_val(btp.pts_addr_type_get(),
-                                                 btp.pts_addr_get(), handle)
-        if not chrc_value_data:
-            continue
+    ##    handle, perm, type_uuid = chrc_value_attr[0]
+    ##    chrc_value_data = btp.gatts_get_attr_val(btp.pts_addr_type_get(),
+    ##                                             btp.pts_addr_get(), handle)
+    ##    if not chrc_value_data:
+    ##        continue
 
-        # Check if returned ATT Insufficient Encryption Key Size error
-        att_rsp, val_len, val = chrc_value_data
-        if att_rsp != 0x0c:
-            continue
+    ##    # Check if returned ATT Insufficient Encryption Key Size error
+    ##    att_rsp, val_len, val = chrc_value_data
+    ##    if att_rsp != 0x0c:
+    ##        continue
 
-        return '{0:04x}'.format(handle)
 
-    return '0000'
+    ##    return '{0:04x}'.format(handle)
+
+    return True
 
 
 def hdl_wid_122(_: WIDParams):
-    # Lookup characteristic UUID that returns Insufficient Encryption Key Size
-    chrcs = btp.gatts_get_attrs(type_uuid='2803')
-    for chrc in chrcs:
-        handle, perm, type_uuid = chrc
+    ## Lookup characteristic UUID that returns Insufficient Encryption Key Size
+    #chrcs = btp.gatts_get_attrs(type_uuid='2803')
+    #for chrc in chrcs:
+    #    handle, perm, type_uuid = chrc
 
-        chrc_data = btp.gatts_get_attr_val(btp.pts_addr_type_get(),
-                                           btp.pts_addr_get(), handle)
-        if not chrc_data:
-            continue
+    #    chrc_data = btp.gatts_get_attr_val(btp.pts_addr_type_get(),
+    #                                       btp.pts_addr_get(), handle)
+    #    if not chrc_data:
+    #        continue
 
-        att_rsp, val_len, val = chrc_data
+    #    att_rsp, val_len, val = chrc_data
 
-        hdr = '<BH'
-        hdr_len = struct.calcsize(hdr)
-        uuid_len = val_len - hdr_len
+    #    hdr = '<BH'
+    #    hdr_len = struct.calcsize(hdr)
+    #    uuid_len = val_len - hdr_len
 
-        prop, handle, chrc_uuid = struct.unpack("<BH%ds" % uuid_len, val)
-        chrc_value_attr = btp.gatts_get_attrs(start_handle=handle,
-                                              end_handle=handle)
-        if not chrc_value_attr:
-            continue
+    #    prop, handle, chrc_uuid = struct.unpack("<BH%ds" % uuid_len, val)
+    #    chrc_value_attr = btp.gatts_get_attrs(start_handle=handle,
+    #                                          end_handle=handle)
+    #    if not chrc_value_attr:
+    #        continue
 
-        handle, perm, type_uuid = chrc_value_attr[0]
-        chrc_value_data = btp.gatts_get_attr_val(btp.pts_addr_type_get(),
-                                                 btp.pts_addr_get(), handle)
-        if not chrc_value_data:
-            continue
+    #    handle, perm, type_uuid = chrc_value_attr[0]
+    #    chrc_value_data = btp.gatts_get_attr_val(btp.pts_addr_type_get(),
+    #                                             btp.pts_addr_get(), handle)
+    #    if not chrc_value_data:
+    #        continue
 
-        att_rsp, val_len, val = chrc_value_data
+    #    att_rsp, val_len, val = chrc_value_data
 
-        # Check if returned ATT Insufficient Authorization error
-        if att_rsp != 0x0c:
-            continue
+    #    # Check if returned ATT Insufficient Authorization error
+    #    if att_rsp != 0x0c:
+    #        continue
 
-        return btp.btp2uuid(uuid_len, chrc_uuid)
+    #    return btp.btp2uuid(uuid_len, chrc_uuid)
+    #return btp.btp2uuid(uuid_len, '2803')
 
-    return '0000'
+    return True
 
 
 def hdl_wid_130(_: WIDParams):
