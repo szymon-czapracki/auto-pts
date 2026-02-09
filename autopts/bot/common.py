@@ -22,6 +22,7 @@ import logging
 import os
 import shutil
 import subprocess
+import re
 import sys
 import time
 import traceback
@@ -34,8 +35,116 @@ from autopts.client import Client, CliParser, TestCaseRunStats, init_logging
 from autopts.config import AUTOPTS_ROOT_DIR, MAX_SERVER_RESTART_TIME, generate_file_paths, SERIAL_BAUDRATE
 from autopts.ptsprojects.boards import get_debugger_snr, get_free_device, get_tty, release_device
 from autopts.ptsprojects.testcase_db import DATABASE_FILE
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Optional, Pattern
 
 log = logging.debug
+
+
+@dataclass(frozen=True)
+class DongleMapRule:
+    """A mapping from testcase regex to dongle, optionally per PTS instance."""
+    pts_index: int
+    pattern: Pattern[str]
+    dongle: Optional[str]  # None clears preference
+
+
+def parse_dongle_map_rule(spec: str) -> DongleMapRule:
+    """Parse REGEX=DONGLE or PTS_INDEX:REGEX=DONGLE."""
+    if "=" not in spec:
+        raise ValueError(f"Invalid dongle-map rule (missing '='): {spec!r}")
+
+    left, dongle = spec.split("=", 1)
+    left = left.strip()
+    dongle = dongle.strip() or None
+
+    pts_index = 0
+    regex = left
+
+    if ":" in left:
+        maybe_idx, rest = left.split(":", 1)
+        if maybe_idx.isdigit():
+            pts_index = int(maybe_idx)
+            regex = rest.strip()
+
+    if not regex:
+        raise ValueError(f"Invalid dongle-map rule (empty regex): {spec!r}")
+
+    try:
+        pattern = re.compile(regex)
+    except re.error as exc:
+        raise ValueError(f"Invalid dongle-map regex {regex!r}: {exc}") from exc
+
+    return DongleMapRule(pts_index=pts_index, pattern=pattern, dongle=dongle)
+
+
+def build_dongle_map_rules(*sources: Iterable[str]) -> List[DongleMapRule]:
+    """Build rules from multiple sources. Order matters: first match wins."""
+    rules: List[DongleMapRule] = []
+    for src in sources:
+        for item in src or []:
+            if item:
+                rules.append(parse_dongle_map_rule(item))
+    return rules
+
+
+def compose_pre_test_hooks(*hooks):
+    """Compose multiple pre_test_case_fn callbacks into one."""
+    callables = [h for h in hooks if callable(h)]
+    if not callables:
+        return None
+
+    def _composed(**kwargs):
+        for hook in callables:
+            hook(**kwargs)
+
+    return _composed
+
+
+class DongleSwitcher:
+    def __init__(self, ptses, rules: List[DongleMapRule]) -> None:
+        self._ptses = ptses
+        self._rules_by_pts: Dict[int, List[DongleMapRule]] = defaultdict(list)
+        for r in rules:
+            self._rules_by_pts[r.pts_index].append(r)
+
+        # list is a bit cleaner than dict here
+        self._last: List[Optional[str]] = [None] * len(ptses)
+
+    def apply(self, test_case: str) -> None:
+        if not test_case:
+            return
+
+        for pts_index, pts in enumerate(self._ptses):
+            rules = self._rules_by_pts.get(pts_index)
+            if not rules:
+                continue
+
+            dongle = self._resolve_for_pts(rules, test_case)
+            if dongle is _NO_MATCH:
+                continue
+
+            if self._last[pts_index] == dongle:
+                # optional: logging.debug("DongleMap: unchanged pts[%d]=%s", pts_index, dongle)
+                continue
+
+            # optional: clearer log if dongle is None (meaning “clear preference”)
+            pts.switch_dongle(dongle, True)
+            self._last[pts_index] = dongle
+
+    @staticmethod
+    def _resolve_for_pts(rules: List[DongleMapRule], test_case: str):
+        for r in rules:                 # order matters: first match wins
+            if r.pattern.search(test_case):
+                return r.dongle         # can be None = clear preference
+        return _NO_MATCH
+
+
+class _NoMatch:
+    pass
+
+_NO_MATCH = _NoMatch()
 
 
 def get_deepest_dirs(logs_tree, dst_tree, max_depth):
@@ -142,6 +251,7 @@ class BotConfigArgs(Namespace):
         self.build_env_cmd = args.get('build_env_cmd', None)
         self.copy = args.get('copy', True)
         self.wid_usage = args.get('wid_usage', False)
+        self.dongle_map = args.get('dongle_map', [])
 
         if self.server_args is not None:
             from autoptsserver import SvrArgumentParser
@@ -397,31 +507,49 @@ class BotClient(Client):
 
         projects = self.ptses[0].get_project_list()
 
-        for config, config_args in self._yield_next_config():
+        for config_name, config_args in self._yield_next_config():
             try:
                 if not stats:
-                    stats = TestCaseRunStats(projects,
-                                             config_args.test_cases,
-                                             config_args.retry,
-                                             self.test_case_database,
-                                             xml_results_file=self.file_paths['TC_STATS_RESULTS_XML_FILE'])
+                    stats = TestCaseRunStats(
+                        projects,
+                        config_args.test_cases,
+                        config_args.retry,
+                        self.test_case_database,
+                        xml_results_file=self.file_paths["TC_STATS_RESULTS_XML_FILE"],
+                    )
                     stats.session_log_dir = all_stats.session_log_dir
 
                     if self.args.use_backup:
-                        self._backup_tc_stats(config=config, test_case=None, stats=stats)
+                        self._backup_tc_stats(config=config_name, test_case=None, stats=stats)
 
-                self.apply_config(config_args, config, self.iut_config[config])
+                self.apply_config(config_args, config_name, self.iut_config[config_name])
 
-                stats = autoptsclient.run_test_cases(self.ptses,
-                                                     self.test_cases,
-                                                     config_args,
-                                                     stats,
-                                                     config=config,
-                                                     pre_test_case_fn=self._backup_tc_stats,
-                                                     file_paths=copy.deepcopy(self.file_paths))
+                cfg_specs = getattr(config_args, "dongle_map", []) or []
+                cli_specs = getattr(self.args, "dongle_map", []) or []
+                rules = build_dongle_map_rules(cfg_specs, cli_specs)
+
+                switcher = DongleSwitcher(self.ptses, rules)
+
+                def _dongle_hook(config=None, test_case=None, stats=None, **kwargs):
+                    if test_case:
+                        switcher.apply(test_case)
+
+                pre_hook = self._backup_tc_stats
+                if rules:
+                    pre_hook = compose_pre_test_hooks(self._backup_tc_stats, _dongle_hook)
+
+                stats = autoptsclient.run_test_cases(
+                    self.ptses,
+                    self.test_cases,
+                    config_args,
+                    stats,
+                    config=config_name,
+                    pre_test_case_fn=pre_hook,
+                    file_paths=copy.deepcopy(self.file_paths),
+                )
 
             except BuildAndFlashException:
-                log(f'Build and flash step failed for config {config}')
+                log(f'Build and flash step failed for config {config_name}')
                 for tc in config_args.test_cases:
                     status = 'BUILD_OR_FLASH ERROR'
                     stats.update(tc, time.time(), status)
